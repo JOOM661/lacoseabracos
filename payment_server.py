@@ -9,14 +9,13 @@ load_dotenv()
 
 _flask = Flask(__name__)
 
+# Puxa o token da aba Environment Variables do Render, se não achar usa o de teste
 ACCESS_TOKEN = os.getenv(
     "MP_ACCESS_TOKEN",
     "TEST-5848323176406288-051716-7cf9df4522c85ebf6585b78fbd04e202-1179794795"
 )
 print(f"[payment_server] Token carregado: {ACCESS_TOKEN[:20]}...")
 sdk = mercadopago.SDK(ACCESS_TOKEN)
-
-LOCAL_PORT = 8080
 
 # Guarda o payment_id do pagamento atual para polling
 _payment_state = {"status": "pending", "payment_id": None}
@@ -34,7 +33,7 @@ def reset_payment_state():
 @_flask.route("/criar-sessao", methods=["POST"])
 def criar_sessao():
     try:
-        dados = request.get_json()
+        dados = request.get_json() or {}
         print(f"[payment_server] Dados recebidos: {dados}")
 
         valor       = float(dados.get("cesta_preco") or 0)
@@ -46,7 +45,7 @@ def criar_sessao():
 
         payment_data = {
             "transaction_amount": valor,
-            "description":        nome_cesta,
+            "description":       nome_cesta,
             "payment_method_id":  "pix",
             "payer": {
                 "email":      payer_email,
@@ -83,7 +82,7 @@ def criar_sessao():
             "pix_code":       pix_code,
             "qr_code_base64": qr_base64,
             "qr_code_image":  qr_base64,
-            "payment_id":     payment_id,
+            "payment_id":      payment_id,
         }), 200
 
     except Exception as e:
@@ -123,15 +122,30 @@ def payment_status():
         return jsonify({"status": "pending", "error": str(e)}), 200
 
 
+# Mantido para compatibilidade caso você chame de dentro do app desktop localmente
 def start_payment_server():
     def _run():
         _flask.run(
             host="127.0.0.1",
-            port=LOCAL_PORT,
+            port=8080,
             debug=False,
             use_reloader=False,
             threaded=True,
         )
     t = threading.Thread(target=_run, daemon=True, name="MercadoPagoFlask")
     t.start()
-    print(f"[payment_server] Flask rodando em http://127.0.0.1:{LOCAL_PORT}")
+    print("[payment_server] Flask rodando localmente via Thread em http://127.0.0.1:8080")
+
+
+# Inicialização principal para produção (Render)
+if __name__ == "__main__":
+    # O Render envia a porta correta em $PORT. Se rodar local, usa a 8080.
+    port = int(os.getenv("PORT", 8080))
+    print(f"[payment_server] Inicializando Flask em 0.0.0.0:{port}")
+    _flask.run(
+        host="0.0.0.0", 
+        port=port, 
+        debug=False, 
+        use_reloader=False, 
+        threaded=True
+    )
